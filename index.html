@@ -3,42 +3,41 @@
 const app=document.getElementById('app');
 const pct={1:1,2:.95,3:.93,4:.90,5:.87,6:.85,7:.83,8:.80,9:.77,10:.75,11:.72,12:.70,13:.68,14:.66,15:.65};
 let calcTarget=null,calcRows=[];
-function rounded(v,inc){return Math.floor((v/inc)+Number.EPSILON)*inc}
-function fmt(v,inc){return v.toFixed(Number.isInteger(inc)?0:1)}
+function rounded(v){return Math.round(v)}
+function fmt(v){return String(Math.round(v))}
 function openCalculator(groupId,exId,exerciseName='Exercise'){
   const w=app.contentWindow;calcTarget={groupId,exId,exerciseName};
   w.openModal(`
     <h3>Workout Load Calculator — ${w.escapeHtml(exerciseName)}</h3>
     <div class="hint" style="margin-bottom:12px;">Enter a weight and reps you completed. The calculator estimates 1RM, then builds a warm up and descending working sets.</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-      <label class="hint">Weight done (lb)<input id="lcDoneWeight" type="number" inputmode="decimal" min="2.5" max="500" step="2.5" value="140.0"></label>
+      <label class="hint">Weight done (lb)<input id="lcDoneWeight" type="number" inputmode="decimal" min="1" max="500" step="1" value="140"></label>
       <label class="hint">Reps done: <b id="lcDoneRepsVal">12</b><input id="lcDoneReps" type="range" min="1" max="15" step="1" value="12"></label>
       <label class="hint">Calculated 1RM (lb)<input id="lcOneRM" type="number" readonly></label>
       <label class="hint">Target reps: <b id="lcTargetRepsVal">12</b><input id="lcTargetReps" type="range" min="1" max="15" step="1" value="12"></label>
       <label class="hint">Working sets: <b id="lcSetsVal">4</b><input id="lcSets" type="range" min="1" max="5" step="1" value="4"></label>
       <label class="hint">Drop per set: <b id="lcDropVal">20%</b><input id="lcDrop" type="range" min="0" max="100" step="5" value="20"></label>
       <label class="hint">Rest: <b id="lcRestVal">60 sec</b><input id="lcRest" type="range" min="30" max="180" step="30" value="60"></label>
-      <label class="hint">Round down to (lb)<select id="lcRound" style="width:100%;padding:12px;border-radius:12px;background:rgba(12,16,22,.55);color:var(--text);border:1px solid rgba(255,255,255,.14);"><option value="2.5" selected>2.5</option><option value="5">5</option><option value="10">10</option></select></label>
     </div>
     <div id="lcSummary" class="hint" style="margin:14px 0 8px;"></div>
     <div id="lcResults" class="percent-preview"></div>
     <div class="actions"><button id="lcBack">Back</button><button id="lcApply">Update sets for this workout</button></div>
   `);
   const d=w.document;
-  ['lcDoneWeight','lcDoneReps','lcTargetReps','lcSets','lcDrop','lcRest','lcRound'].forEach(id=>d.getElementById(id)?.addEventListener('input',calc));
+  ['lcDoneWeight','lcDoneReps','lcTargetReps','lcSets','lcDrop','lcRest'].forEach(id=>d.getElementById(id)?.addEventListener('input',calc));
   d.getElementById('lcBack')?.addEventListener('click',()=>w.openSetSettings(groupId,exId));
   d.getElementById('lcApply')?.addEventListener('click',applyCalculatorSets);
   calc();
 }
 function calc(){
   const w=app.contentWindow,d=w.document,$=id=>d.getElementById(id);if(!$('lcDoneWeight'))return;
-  const doneWeight=+$('lcDoneWeight').value||0,doneReps=Math.max(1,Math.min(15,+$('lcDoneReps').value||1)),targetReps=Math.max(1,Math.min(15,+$('lcTargetReps').value||1)),workingSets=Math.max(1,+$('lcSets').value||1),drop=(+$('lcDrop').value||0)/100,rest=+$('lcRest').value||0,inc=+$('lcRound').value||2.5,rm=doneWeight/(pct[doneReps]||1),base=rm*(pct[targetReps]||1);
+  const doneWeight=+$('lcDoneWeight').value||0,doneReps=Math.max(1,Math.min(15,+$('lcDoneReps').value||1)),targetReps=Math.max(1,Math.min(15,+$('lcTargetReps').value||1)),workingSets=Math.max(1,+$('lcSets').value||1),drop=(+$('lcDrop').value||0)/100,rest=+$('lcRest').value||0,rm=doneWeight/(pct[doneReps]||1),base=rm*(pct[targetReps]||1);
   $('lcDoneRepsVal').textContent=doneReps;$('lcTargetRepsVal').textContent=targetReps;$('lcSetsVal').textContent=workingSets;$('lcDropVal').textContent=Math.round(drop*100)+'%';$('lcRestVal').textContent=rest+' sec';$('lcOneRM').value=rm.toFixed(1);
-  calcRows=[];const warmRaw=base*.5,warmWeight=rounded(warmRaw,inc);calcRows.push({label:'Warm Up',weight:warmWeight,reps:targetReps,raw:warmRaw});
-  for(let set=1;set<=workingSets;set++){const raw=base*Math.pow(1-drop,set-1);calcRows.push({label:`Set ${set}`,weight:rounded(raw,inc),reps:targetReps,raw})}
+  calcRows=[];const warmRaw=base*.5,warmWeight=rounded(warmRaw);calcRows.push({label:'Warm Up',weight:warmWeight,reps:targetReps,raw:warmRaw});
+  for(let set=1;set<=workingSets;set++){const raw=base*Math.pow(1-drop,set-1);calcRows.push({label:`Set ${set}`,weight:rounded(raw),reps:targetReps,raw})}
   const totalVolume=calcRows.reduce((sum,row)=>sum+row.weight*row.reps,0);
-  $('lcSummary').innerHTML=`Fresh target: <b>${fmt(rounded(base,inc),inc)} lb</b> &nbsp; • &nbsp; Working reps: <b>${workingSets*targetReps}</b> &nbsp; • &nbsp; Total volume: <b>${totalVolume.toLocaleString(undefined,{maximumFractionDigits:1})} lb</b> &nbsp; • &nbsp; Rest: <b>${rest} sec</b>`;
-  $('lcResults').innerHTML=calcRows.map(row=>`<div class="percent-preview-row"><strong>${w.escapeHtml(row.label)}</strong><span>${rm>0?(row.raw/rm*100).toFixed(1):'0.0'}% 1RM</span><span>${fmt(row.weight,inc)} lb × ${row.reps}</span></div>`).join('');
+  $('lcSummary').innerHTML=`Fresh target: <b>${fmt(base)} lb</b> &nbsp; • &nbsp; Working reps: <b>${workingSets*targetReps}</b> &nbsp; • &nbsp; Total volume: <b>${totalVolume.toLocaleString(undefined,{maximumFractionDigits:0})} lb</b> &nbsp; • &nbsp; Rest: <b>${rest} sec</b>`;
+  $('lcResults').innerHTML=calcRows.map(row=>`<div class="percent-preview-row"><strong>${w.escapeHtml(row.label)}</strong><span>${rm>0?(row.raw/rm*100).toFixed(1):'0.0'}% 1RM</span><span>${fmt(row.weight)} lb × ${row.reps}</span></div>`).join('');
 }
 function applyCalculatorSets(){
   if(!calcTarget||!calcRows.length)return;const w=app.contentWindow,d=w.document,{groupId,exId}=calcTarget;
