@@ -5,27 +5,29 @@ const pct={1:1,2:.95,3:.93,4:.90,5:.87,6:.85,7:.83,8:.80,9:.77,10:.75,11:.72,12:
 let calcTarget=null,calcRows=[];
 function rounded(v,inc){return Math.floor((v/inc)+Number.EPSILON)*inc}
 function fmt(v,inc){return v.toFixed(Number.isInteger(inc)?0:1)}
-function openCalculator(groupId,exId){
-  const w=app.contentWindow,g=w.APP?.groups.find(x=>x.id===groupId),ex=g?.exercises.find(e=>e.id===exId);if(!g||!ex)return;
-  calcTarget={groupId,exId};
+function openCalculator(groupId,exId,exerciseName='Exercise'){
+  const w=app.contentWindow;calcTarget={groupId,exId,exerciseName};
   w.openModal(`
-    <h3>Workout Load Calculator — ${w.escapeHtml(ex.name)}</h3>
+    <h3>Workout Load Calculator — ${w.escapeHtml(exerciseName)}</h3>
     <div class="hint" style="margin-bottom:12px;">Enter a weight and reps you completed. The calculator estimates 1RM, then builds a warm up and descending working sets.</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-      <label class="hint">Weight done (lb)<input id="lcDoneWeight" type="number" inputmode="decimal" min="2.5" max="500" step="2.5" value="140.0" oninput="updateWorkoutCalculator()"></label>
-      <label class="hint">Reps done: <b id="lcDoneRepsVal">12</b><input id="lcDoneReps" type="range" min="1" max="15" step="1" value="12" oninput="updateWorkoutCalculator()"></label>
+      <label class="hint">Weight done (lb)<input id="lcDoneWeight" type="number" inputmode="decimal" min="2.5" max="500" step="2.5" value="140.0"></label>
+      <label class="hint">Reps done: <b id="lcDoneRepsVal">12</b><input id="lcDoneReps" type="range" min="1" max="15" step="1" value="12"></label>
       <label class="hint">Calculated 1RM (lb)<input id="lcOneRM" type="number" readonly></label>
-      <label class="hint">Target reps: <b id="lcTargetRepsVal">12</b><input id="lcTargetReps" type="range" min="1" max="15" step="1" value="12" oninput="updateWorkoutCalculator()"></label>
-      <label class="hint">Working sets: <b id="lcSetsVal">4</b><input id="lcSets" type="range" min="1" max="5" step="1" value="4" oninput="updateWorkoutCalculator()"></label>
-      <label class="hint">Drop per set: <b id="lcDropVal">20%</b><input id="lcDrop" type="range" min="0" max="100" step="5" value="20" oninput="updateWorkoutCalculator()"></label>
-      <label class="hint">Rest: <b id="lcRestVal">60 sec</b><input id="lcRest" type="range" min="30" max="180" step="30" value="60" oninput="updateWorkoutCalculator()"></label>
-      <label class="hint">Round down to (lb)<select id="lcRound" onchange="updateWorkoutCalculator()" style="width:100%;padding:12px;border-radius:12px;background:rgba(12,16,22,.55);color:var(--text);border:1px solid rgba(255,255,255,.14);"><option value="2.5" selected>2.5</option><option value="5">5</option><option value="10">10</option></select></label>
+      <label class="hint">Target reps: <b id="lcTargetRepsVal">12</b><input id="lcTargetReps" type="range" min="1" max="15" step="1" value="12"></label>
+      <label class="hint">Working sets: <b id="lcSetsVal">4</b><input id="lcSets" type="range" min="1" max="5" step="1" value="4"></label>
+      <label class="hint">Drop per set: <b id="lcDropVal">20%</b><input id="lcDrop" type="range" min="0" max="100" step="5" value="20"></label>
+      <label class="hint">Rest: <b id="lcRestVal">60 sec</b><input id="lcRest" type="range" min="30" max="180" step="30" value="60"></label>
+      <label class="hint">Round down to (lb)<select id="lcRound" style="width:100%;padding:12px;border-radius:12px;background:rgba(12,16,22,.55);color:var(--text);border:1px solid rgba(255,255,255,.14);"><option value="2.5" selected>2.5</option><option value="5">5</option><option value="10">10</option></select></label>
     </div>
     <div id="lcSummary" class="hint" style="margin:14px 0 8px;"></div>
     <div id="lcResults" class="percent-preview"></div>
-    <div class="hint" style="margin-top:14px;text-align:center;">Would you like to update the sets for this workout to the calculated sets above?</div>
-    <div class="actions"><button onclick="openSetSettings('${groupId}','${exId}')">Back</button><button onclick="applyWorkoutCalculatorSets()">Update sets for this workout</button></div>
+    <div class="actions"><button id="lcBack">Back</button><button id="lcApply">Update sets for this workout</button></div>
   `);
+  const d=w.document;
+  ['lcDoneWeight','lcDoneReps','lcTargetReps','lcSets','lcDrop','lcRest','lcRound'].forEach(id=>d.getElementById(id)?.addEventListener('input',calc));
+  d.getElementById('lcBack')?.addEventListener('click',()=>w.openSetSettings(groupId,exId));
+  d.getElementById('lcApply')?.addEventListener('click',applyCalculatorSets);
   calc();
 }
 function calc(){
@@ -39,14 +41,19 @@ function calc(){
   $('lcResults').innerHTML=calcRows.map(row=>`<div class="percent-preview-row"><strong>${w.escapeHtml(row.label)}</strong><span>${rm>0?(row.raw/rm*100).toFixed(1):'0.0'}% 1RM</span><span>${fmt(row.weight,inc)} lb × ${row.reps}</span></div>`).join('');
 }
 function applyCalculatorSets(){
-  if(!calcTarget||!calcRows.length)return;const w=app.contentWindow,g=w.APP?.groups.find(x=>x.id===calcTarget.groupId),ex=g?.exercises.find(e=>e.id===calcTarget.exId);if(!g||!ex)return;
-  const oldLabels=[...w.getExerciseSetLabels(ex)],newLabels=calcRows.map(x=>x.label);w.migrateWorkoutKeys_ExerciseSetLabels(g,ex,oldLabels,newLabels);ex.setLabels=newLabels;ex.percentageConfig={enabled:false,maxWeight:0,maxReps:0};w.saveAppData(w.APP);
-  calcRows.forEach(row=>{const key=`${w.KEY_PREFIX}${w.safeKey(g.name)}::${w.safeKey(ex.name)}::${w.safeKey(row.label)}`;w.localStorage.setItem(key,JSON.stringify({weight:row.weight,set:row.reps}))});w.closeModal();if(w.CURRENT_GROUP_ID===g.id)w.openGroupPanel(g.id);
+  if(!calcTarget||!calcRows.length)return;const w=app.contentWindow,d=w.document,{groupId,exId}=calcTarget;
+  w.openSetSettings(groupId,exId);
+  const count=d.getElementById('setCount');if(!count)return;count.value=calcRows.length;w.handleSetCountChange(calcRows.length);
+  const inputs=[...d.querySelectorAll('#setLabelsContainer .set-label-input')];calcRows.forEach((row,i)=>{if(inputs[i])inputs[i].value=row.label});
+  w.confirmSetSettings(groupId,exId);
+  setTimeout(()=>{
+    const panel=d.getElementById('panel');if(!panel)return;
+    const cards=[...panel.querySelectorAll('.exercise-card')];const card=cards.find(c=>(c.querySelector('.exercise-title')?.textContent||'').trim()===calcTarget.exerciseName);if(!card)return;
+    const charts=[...card.querySelectorAll('.chart-wrapper')];calcRows.forEach((row,i)=>{const chart=charts[i];if(!chart)return;const rep=chart.querySelector('.rep-input'),weight=chart.querySelector('.weight-input');if(rep){rep.value=row.reps;rep.dispatchEvent(new Event('input',{bubbles:true}))}if(weight){weight.value=row.weight;weight.dispatchEvent(new Event('input',{bubbles:true}))}});
+  },0);
 }
 app.addEventListener('load',()=>{
-  const w=app.contentWindow;if(typeof w.openSetSettings!=='function')return;
-  w.updateWorkoutCalculator=calc;w.applyWorkoutCalculatorSets=applyCalculatorSets;w.openWorkoutCalculator=openCalculator;
-  const original=w.openSetSettings;
-  w.openSetSettings=function(groupId,exId){original.call(w,groupId,exId);setTimeout(()=>{const modal=w.document.getElementById('modal');if(!modal)return;const oldBox=modal.querySelector('.percent-box');if(oldBox){oldBox.innerHTML='';const launch=w.document.createElement('label');launch.className='percent-toggle';launch.textContent='Calculate using calculator';launch.setAttribute('role','button');launch.tabIndex=0;launch.style.cursor='pointer';launch.onclick=e=>{e.preventDefault();w.openWorkoutCalculator(groupId,exId)};launch.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();w.openWorkoutCalculator(groupId,exId)}};oldBox.appendChild(launch)}[...modal.querySelectorAll('.hint')].forEach(h=>{if(/percentage breakdown/i.test(h.textContent||''))h.remove()})},0)};
+  const w=app.contentWindow;if(typeof w.openSetSettings!=='function')return;const original=w.openSetSettings;
+  w.openSetSettings=function(groupId,exId){original.call(w,groupId,exId);setTimeout(()=>{const modal=w.document.getElementById('modal');if(!modal)return;const title=modal.querySelector('h3')?.textContent||'';const exerciseName=title.replace(/^Edit Sets\s*[—-]\s*/i,'').trim()||'Exercise';const oldBox=modal.querySelector('.percent-box');if(oldBox){oldBox.innerHTML='';const launch=w.document.createElement('label');launch.className='percent-toggle';launch.textContent='Calculate using calculator';launch.setAttribute('role','button');launch.tabIndex=0;launch.style.cursor='pointer';const go=e=>{e?.preventDefault();e?.stopPropagation();openCalculator(groupId,exId,exerciseName)};launch.addEventListener('click',go);launch.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' ')go(e)});oldBox.appendChild(launch)}[...modal.querySelectorAll('.hint')].forEach(h=>{if(/percentage breakdown/i.test(h.textContent||''))h.remove()})},0)};
 });
 </script></body></html>
